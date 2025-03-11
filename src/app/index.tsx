@@ -41,10 +41,23 @@ const App = () => {
   }, [rootStore])
 
 
-  const handleCreateRoom = async () => {
+  const handleCreateRoom =  () => {
     console.log("Create room clicked")
-    // await rootStore.sessionStore.createRoom({ sessionId: rootStore.sessionStore.sessionId })
+    // navigate to message screen
+    navigation.navigate("Message")
   }
+
+  // const handleCreateRoom = async () => {
+  //   console.log("Create room clicked")
+  //   try {
+  //     // Call the createRoom method from the sessionStore
+  //     await rootStore.sessionStore.createRoom({});
+  //     console.log("Room created with ID:", rootStore.sessionStore.roomId);
+  //     // You can add navigation to the room or other logic here
+  //   } catch (error) {
+  //     console.error("Error creating room:", error);
+  //   }
+  // }
 
   return (
     <RootStoreProvider value={rootStore}>

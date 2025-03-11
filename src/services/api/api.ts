@@ -11,6 +11,7 @@ import { GeneralApiProblem, getGeneralApiProblem } from "./apiProblem"
 import type { ApiConfig, ApiFeedResponse } from "./api.types"
 import type { EpisodeSnapshotIn } from "../../models/Episode"
 import { createSession } from "./implementations/sessionApi"
+import { createRoom } from "./implementations/roomApi"
 
 /**
  * Configuring the apisauce instance.
@@ -78,6 +79,9 @@ export class Api {
 
   // Expose the createSession function
   createSession = createSession
+  
+  // Expose the createRoom function
+  createRoom = createRoom
 }
 
 // Singleton instance of the API for convenience
