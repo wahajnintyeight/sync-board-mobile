@@ -10,6 +10,7 @@ import Config from "../../config"
 import { GeneralApiProblem, getGeneralApiProblem } from "./apiProblem"
 import type { ApiConfig, ApiFeedResponse } from "./api.types"
 import type { EpisodeSnapshotIn } from "../../models/Episode"
+import { createSession } from "./implementations/sessionApi"
 
 /**
  * Configuring the apisauce instance.
@@ -74,6 +75,9 @@ export class Api {
       return { kind: "bad-data" }
     }
   }
+
+  // Expose the createSession function
+  createSession = createSession
 }
 
 // Singleton instance of the API for convenience
