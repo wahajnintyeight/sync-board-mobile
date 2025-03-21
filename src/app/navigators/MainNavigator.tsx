@@ -12,7 +12,7 @@ const Stack = createNativeStackNavigator<MainNavigatorParamList>()
 export const MainNavigator = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, }}>
-      <Stack.Screen name="SplashScreen" initial={true} component={SplashScreen} />
+      <Stack.Screen name="SplashScreen" component={SplashScreen} />
       <Stack.Screen name="MessageRoom" component={MessageRoomScreen} />
     </Stack.Navigator>
   )

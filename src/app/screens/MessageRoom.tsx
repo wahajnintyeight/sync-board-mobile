@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react"
 import { observer } from "mobx-react-lite"
-import { View, ViewStyle, TextInput, KeyboardAvoidingView, Platform, TextStyle, TouchableOpacity, ScrollView, Dimensions } from "react-native"
+import { View, ViewStyle, TextInput, KeyboardAvoidingView, Platform, TextStyle, TouchableOpacity, ScrollView, Dimensions, ImageStyle } from "react-native"
 import { Screen, Text, Icon, Header } from "@/components"
 import { useAppTheme } from "@/utils/useAppTheme"
 import { ThemedStyle } from "@/theme"
@@ -87,12 +87,6 @@ export default observer(function MessageRoomScreen() {
         </View>
         
         <View style={themed($dateHeaderContainer)}>
-          {/* <View style={themed($dateHeaderLine)} /> */}
-          {/* <View style={themed($dateHeaderTextContainer)}>
-            <Icon icon="calendar" size={14} color="#666" />
-            <Text style={themed($dateHeaderText)}>Today</Text>
-          </View> */}
-          {/* <View style={themed($dateHeaderLine)} /> */}
         </View>
       </View>
 
@@ -301,9 +295,9 @@ const $timestamp: ThemedStyle<TextStyle> = () => ({
   alignSelf: 'flex-end',
 })
 
-const $attachIcon: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
+const $attachIcon: ThemedStyle<ImageStyle> = ({ colors, spacing }) => ({
   marginRight: spacing.sm,
-  color: colors.textDim,
+  tintColor: colors.textDim,
 })
 
 const $inputContainer: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
