@@ -30,31 +30,18 @@ export const SessionStoreModel = types
         store.sessionId = response.sessionId || "";
         store.message = response.message || "";
         store.error = response.error || "";
-      } catch (error) {
-        store.error = error.message;
+      } catch (error: unknown) {
+        // Type guard for error
+        if (error instanceof Error) {
+          store.error = error.message;
+        } else {
+          store.error = String(error);
+        }
       }
     },
-    async createRoom(roomData: { [key: string]: any }) {
-      try {
-        // Make sure to include the sessionId in the request
-        const requestData = {
-          ...roomData,
-          sessionId: store.sessionId,
-        };
-        
-        const response = await createRoom(requestData);
-        console.log("createRoom response", response);
-        
-        store.roomId = response.roomId || "";
-        store.message = response.message || "";
-        store.error = response.error || "";
-        
-        return response;
-      } catch (error) {
-        store.error = error.message;
-        throw error;
-      }
-    },
+    getSessionId() {
+      return store.sessionId;
+    }
   }));
 
 export interface SessionStore extends Instance<typeof SessionStoreModel> {}

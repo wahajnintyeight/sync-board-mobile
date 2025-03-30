@@ -5,29 +5,21 @@ import { Screen, Text, Icon, Header } from "@/components"
 import { useAppTheme } from "@/utils/useAppTheme"
 import { ThemedStyle } from "@/theme"
 import { useNavigation } from "@react-navigation/native"
-
-export default observer(function MessageRoomScreen() {
+import { useStores } from "@/models"
+export default observer(function MessageRoomScreen(props: any) {
+  const { roomId, roomCode } = props.route.params
+  console.log("roomId", roomId)
   const [message, setMessage] = useState("")
   const { themed } = useAppTheme()
+  const roomStore = useStores().roomStore
   const navigation = useNavigation()
   const scrollViewRef = useRef<ScrollView>(null)
 
-  // Generate a random room name
-  const roomName = "Design Team Chat #4872"
-
-  // Dummy messages for UI demonstration
-  const messages = [
-    { id: 1, text: "Hello! Welcome to the chat room!", sender: "other", timestamp: "10:30 AM" },
-    { id: 2, text: "Hi there! Thanks for having me.", sender: "me", timestamp: "10:31 AM" },
-    { id: 3, text: "How are you doing today?", sender: "other", timestamp: "10:32 AM" },
-    { id: 4, text: "I'm doing great, thanks for asking!", sender: "me", timestamp: "10:33 AM" },
-    { id: 5, text: "What's on your mind?", sender: "other", timestamp: "10:34 AM" },
-    { id: 6, text: "Just working on this new app. It's coming along nicely!", sender: "me", timestamp: "10:35 AM" },
-    { id: 7, text: "That sounds awesome! Can't wait to see it.", sender: "other", timestamp: "10:36 AM" },
-    { id: 8, text: "I'll show you when it's ready. Still need to fix a few things.", sender: "me", timestamp: "10:37 AM" },
-    { id: 9, text: "Take your time. Quality is more important than speed.", sender: "other", timestamp: "10:38 AM" },
-    { id: 10, text: "You're absolutely right about that!", sender: "me", timestamp: "10:39 AM" },
-  ]
+  console.log("Room Store", roomStore.currentRoom)
+  // Use actual room data from store
+  const room = roomStore.currentRoom?.room || {}
+  const roomName = room.roomName || "New Chat Room"
+  const messages = room.messages || []
 
   const handleSend = () => {
     if (message.trim()) {
@@ -44,7 +36,7 @@ export default observer(function MessageRoomScreen() {
     const isMe = msg.sender === "me"
     return (
       <View 
-        key={msg.id} 
+        key={msg._id || msg.id} 
         style={[
           themed($messageWrapper),
           isMe ? themed($myMessageWrapper) : themed($otherMessageWrapper)
@@ -60,7 +52,9 @@ export default observer(function MessageRoomScreen() {
           ]}>
             {msg.text}
           </Text>
-          <Text style={themed($timestamp)}>{msg.timestamp}</Text>
+          <Text style={themed($timestamp)}>
+            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
         </View>
       </View>
     )

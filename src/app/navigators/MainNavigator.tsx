@@ -4,8 +4,12 @@ import app from "@/app"
 import SplashScreen from "../screens/Splash"
 
 export type MainNavigatorParamList = {
-  MessageRoom: undefined
   SplashScreen: undefined
+  MessageRoom: {
+    roomId?: string
+    roomCode?: string
+    roomName?: string
+  }
 }
 
 const Stack = createNativeStackNavigator<MainNavigatorParamList>()

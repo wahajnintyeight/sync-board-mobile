@@ -9,8 +9,8 @@ import { api } from "../api"; // Import the base API instance
  * @returns The response from the API.
  */
 export const createSession = async (sessionData: { [key: string]: any }): Promise<{ message: string; error?: string; sessionId?: string }> => {
-    const response: ApiResponse<{ message: string; error?: string; sessionId?: string }> = await api.apisauce.put(
-        `v2/api/createSession`,
+    const response: ApiResponse<{ message: string; error?: string; sessionId?: string; result?: string }> = await api.apisauce.put(
+        `/createSession`,
         sessionData
     );
 
@@ -23,6 +23,7 @@ export const createSession = async (sessionData: { [key: string]: any }): Promis
     // Store sessionId in local storage
     if (response.data?.result) { // Check for 'result' instead of 'sessionId'
         storage.set("sessionId", response.data.result); // Store the result as sessionId
+        storage.set("sessionExpiry", Date.now() + 60 * 60 * 1000); // Set session expiry to 1 hour from now
     }
 
     return {

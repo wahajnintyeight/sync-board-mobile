@@ -1,13 +1,14 @@
-import React, { FC, useEffect } from "react"
+import React, { FC, useEffect, useState } from "react"
 import { observer } from "mobx-react-lite"
 import { Image, ImageStyle, TextStyle, View, ViewStyle } from "react-native"
 import { Button, Screen, Text } from "@/components"
-
+import { JoinRoom } from "@/components/JoinRoom"
 import { ThemedStyle } from "@/theme"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
 import { useAppTheme } from "@/utils/useAppTheme"
 import { RootStoreProvider, useStores } from "@/models/helpers/useStores"
 import { storage } from "@/utils/storage"
+import { getDeviceInfo } from "@/utils/deviceInfo"
 const welcomeLogo = require("../../assets/images/logo.png")
 const welcomeFace = require("../../assets/images/welcome-face.png")
 import { useNavigation } from "@react-navigation/native"
@@ -19,14 +20,16 @@ export default observer(function SplashScreen() {
   const rootStore = useStores();
   const { themed } = useAppTheme();
   const navigation = useNavigation();
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [joinRoomVisible, setJoinRoomVisible] = useState(false);
 
   useEffect(() => {
     const loadSession = async () => {
       // Load sessionId from storage
       const sessionId = await storage.getString("sessionId")
-
-      console.log("sessionId", sessionId)
-      if (sessionId === undefined) {
+      const sessionExpiry = await storage.getNumber("sessionExpiry")
+      console.log("sessionId", sessionId, 'exp', sessionExpiry, Date.now())
+      if (sessionId === undefined || sessionExpiry < Date.now()) {
         // Call createSession if sessionId exists
         await rootStore.sessionStore.createSession({ sessionId })
       }
@@ -44,13 +47,38 @@ export default observer(function SplashScreen() {
     loadSession()
   }, [rootStore])
 
-  const handleCreateRoom =  () => {
+  const handleCreateRoom = async () => {
     console.log("Create room clicked")
-    // navigate to message screen
-    navigation.navigate("MessageRoom")
+    
+    try {
+      setIsCreatingRoom(true);
+      
+      // Call the createRoom method from the roomStore
+      const result = await rootStore.roomStore.createNewRoom();
+      
+      console.log("Room created with ID:", result.roomId);
+      console.log("Room code:", result.code);
+      
+      // Navigate to message screen with the room data
+      navigation.navigate("MessageRoom", {
+        roomId: result._id,
+        roomCode: result.code
+      });
+    } catch (error) {
+      console.error("Error creating room:", error);
+      // You might want to show an error message to the user
+    } finally {
+      setIsCreatingRoom(false);
+    }
   }
 
-  
+  const handleOpenJoinRoom = () => {
+    setJoinRoomVisible(true);
+  }
+
+  const handleCloseJoinRoom = () => {
+    setJoinRoomVisible(false);
+  }
 
   return (
     <RootStoreProvider value={rootStore}>
@@ -69,17 +97,24 @@ export default observer(function SplashScreen() {
           <Button
             onPress={handleCreateRoom}
             style={themed($createRoomButton)}
+            disabled={isCreatingRoom}
           >
-            Create Room
+            {isCreatingRoom ? "Creating Room..." : "Create Room"}
           </Button>
           <Button
             style={themed($joinRoomButton)}
+            onPress={handleOpenJoinRoom}
           >
             <Text style={themed($joinRoomButtonText)}>
               Join Room
             </Text>
           </Button>
         </View>
+
+        <JoinRoom 
+          visible={joinRoomVisible} 
+          onClose={handleCloseJoinRoom} 
+        />
       </Screen>
     </RootStoreProvider>
   )
