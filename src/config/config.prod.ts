@@ -7,4 +7,6 @@
  */
 export default {
   API_URL: "https://api.wahaj.codes:8443/v2/api",
+  WS_URL: "wss://realtime.wahaj.codes:8443"
+
 }
