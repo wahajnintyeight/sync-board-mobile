@@ -63,7 +63,7 @@ export const createRoom = async (): Promise<{ message: string; error?: string; r
  */
 export const joinRoom = async (code: string, deviceInfo: string): Promise<{ message: string; error?: string; room?: any }> => {
     const response: ApiResponse<any> = await api.apisauce.post(
-        `api/room/join`,
+        `/room/join`,
         { code, deviceInfo }
     );
 
@@ -74,18 +74,18 @@ export const joinRoom = async (code: string, deviceInfo: string): Promise<{ mess
     }
 
     // Store roomId and code in local storage
-    if (response.data?.room?._id) {
-        storage.set("roomId", response.data.room._id);
+    if (response.data?.result?._id) {
+        storage.set("roomId", response.data.result._id);
     }
     
-    if (response.data?.room?.code) {
-        storage.set("roomCode", response.data.room.code);
+    if (response.data?.result?.code) {
+        storage.set("roomCode", response.data.result.code);
     }
 
     return {
         message: response.data?.message || "",
         error: response.data?.error || "",
-        room: response.data?.room
+        result: response.data?.result
     };
 };
 

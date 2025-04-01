@@ -37,10 +37,12 @@ export const RoomStoreModel = types
       store.setProp("loading", true)
       try {
         const response = await joinRoom(code, deviceInfo)
-        store.setProp("currentRoom", response.room)
+        store.setProp("currentRoom", {room: response.result})
         store.setProp("error", undefined)
-        return response
-      } catch (error) {
+        return response.result
+      } catch (error: unknown) {
+        console.error("RoomStore.joinRoomByCode error:", error)
+        const errorMessage = error instanceof Error ? error.message : String(error)
         store.setProp("error", error.message)
         throw error
       } finally {

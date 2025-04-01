@@ -108,13 +108,17 @@ export const JoinRoom = observer(function JoinRoom(props: JoinRoomProps) {
     const { data } = event?.nativeEvent
     console.log("Scanned QR code:", data)
     
+    // Extract code from URL if present
+    const url = new URL(data)
+    const code = url.searchParams.get('code')
+    
     // Validate the scanned code
-    if (data && data.length === 6) {
-      setRoomCode(data)
+    if (code && code.length === 6) {
+      setRoomCode(code)
       setShowScanner(false)
       
       // Auto-join the room after scanning
-      handleJoinRoomWithCode(data)
+      handleJoinRoomWithCode(code)
     } else {
       setError("Invalid QR code. Please scan a valid room code.")
       setShowScanner(false)
@@ -338,7 +342,7 @@ export const JoinRoom = observer(function JoinRoom(props: JoinRoomProps) {
             </Button>
           </View>
         </View>
-      </View>
+    </View>
     </Modal>
   )
 })

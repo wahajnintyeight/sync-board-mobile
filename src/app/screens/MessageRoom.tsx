@@ -7,8 +7,6 @@ import { ThemedStyle } from "@/theme"
 import { useNavigation } from "@react-navigation/native"
 import { useStores } from "@/models"
 export default observer(function MessageRoomScreen(props: any) {
-  const { roomId, roomCode } = props.route.params
-  console.log("roomId", roomId)
   const [message, setMessage] = useState("")
   const { themed } = useAppTheme()
   const roomStore = useStores().roomStore
