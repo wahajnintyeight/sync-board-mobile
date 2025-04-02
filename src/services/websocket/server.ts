@@ -107,8 +107,8 @@ export const disconnectWebSocket = (socketStore: SocketStore) => {
  * @param message Message content
  */
 export const sendWebSocketMessage = (socketStore: SocketStore, message: string) => {
-  console.log('[WebSocketServer] Sending message');
-  if (socketStore.isAlive) {
+  console.log('[WebSocketServer] Sending message', socketStore.isAlive);
+  if (socketStore.isAlive == true) {
     return socketStore.sendMessage(message);
   } else {
     console.warn('[WebSocketServer] Cannot send message - store is detached');

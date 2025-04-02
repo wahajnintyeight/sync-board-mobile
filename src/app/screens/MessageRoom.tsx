@@ -26,7 +26,7 @@ export default observer(function MessageRoomScreen(props: any) {
   const roomCode = room.code || props.route?.params?.roomCode
   const userId = roomStore?.userId || null
 
-  console.log('[MessageRoom] roomId', room);
+  // console.log('[MessageRoom] roomId', room);
   // Check if store is available
   const isStoreAvailable = React.useMemo(() => {
     try {

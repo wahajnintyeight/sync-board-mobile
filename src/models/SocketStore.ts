@@ -144,7 +144,7 @@ export const SocketStoreModel = types
         if (self.socket && self.socket.readyState === WebSocket.OPEN) {
           // Send disconnect message
           this.sendSocketMessage('disconnect', {
-            roomId: self.roomId
+            roomId: 'room-'+self.roomCode
           });
 
           // Close the socket properly
@@ -195,6 +195,7 @@ export const SocketStoreModel = types
 
     sendMessage(message: string) {
       try {
+        console.log('[SocketStore] Sending message', self.socket?.readyState);
         if (!self.socket || self.socket.readyState !== WebSocket.OPEN) {
           throw new Error('Socket not connected');
         }
@@ -228,6 +229,7 @@ export const SocketStoreModel = types
             action: eventType,
             data: data
           };
+          console.log('[SocketStore] Sending message', msg);
           self.socket.send(JSON.stringify(msg));
           console.log(`[SocketStore] Sent ${eventType} message`);
           return true;
