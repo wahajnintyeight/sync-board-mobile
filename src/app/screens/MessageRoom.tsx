@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react"
 import { observer } from "mobx-react-lite"
 import { View, ViewStyle, TextInput, KeyboardAvoidingView, Platform, TextStyle, TouchableOpacity, ScrollView, Dimensions, ImageStyle, ActivityIndicator } from "react-native"
 import { Screen, Text, Icon, Header } from "@/components"
+import { Message } from "@/components/Message"
 import { useAppTheme } from "@/utils/useAppTheme"
 import { ThemedStyle } from "@/theme"
 import { useNavigation } from "@react-navigation/native"
@@ -9,6 +10,18 @@ import { useStores } from "@/models"
 import { initializeWebSocket, disconnectWebSocket, sendWebSocketMessage } from "@/services/websocket/server"
 import Animated, { FadeIn, FadeOut, SlideInRight } from "react-native-reanimated"
 import { RootStoreProvider } from "@/models/helpers/useStores"
+
+interface Message {
+  timeStamp?: string;
+  createdAt?: string;
+  message: string;
+  sender: string;
+  isAnonymous?: boolean;
+  deviceInfo?: string;
+  isAttachment?: boolean;
+  attachmentType?: string;
+  attachmentURL?: string;
+}
 
 export default observer(function MessageRoomScreen(props: any) {
   const [message, setMessage] = useState("")
@@ -18,6 +31,32 @@ export default observer(function MessageRoomScreen(props: any) {
   const { roomStore, socketStore } = rootStore
   const navigation = useNavigation()
   const scrollViewRef = useRef<ScrollView>(null)
+  
+  // Add state to track if messages are still loading
+  const [messagesLoading, setMessagesLoading] = useState(true)
+
+  // Helper functions to safely handle different message timestamp formats
+  const getMessageTimestamp = (msg: any): string => {
+    return msg?.timeStamp || msg?.createdAt || '';
+  }
+  
+  const compareMessageTimestamps = (a: any, b: any): number => {
+    const aTime = getMessageTimestamp(a);
+    const bTime = getMessageTimestamp(b);
+    
+    if (!aTime) return 1;
+    if (!bTime) return -1;
+    return new Date(aTime).getTime() - new Date(bTime).getTime();
+  }
+  
+  const isDuplicateMessage = (msg1: any, msg2: any): boolean => {
+    if (!msg1 || !msg2) return false;
+    
+    const time1 = getMessageTimestamp(msg1);
+    const time2 = getMessageTimestamp(msg2);
+    
+    return time1 === time2 && msg1.message === msg2.message;
+  }
 
   // Get room data from store
   const room = roomStore.currentRoom.room || {}
@@ -26,6 +65,10 @@ export default observer(function MessageRoomScreen(props: any) {
   const roomCode = room.code || props.route?.params?.roomCode
   const userId = roomStore?.userId || null
 
+  // State to hold combined messages from both roomStore and socketStore
+  const [combinedMessages, setCombinedMessages] = useState<Message[]>([])
+
+  console.log("Message length", roomStore?.currentRoom)
   // console.log('[MessageRoom] roomId', room);
   // Check if store is available
   const isStoreAvailable = React.useMemo(() => {
@@ -58,6 +101,7 @@ export default observer(function MessageRoomScreen(props: any) {
           
           if (isMounted) {
             setIsConnecting(false);
+            
           }
         }
       } catch (error) {
@@ -90,85 +134,142 @@ export default observer(function MessageRoomScreen(props: any) {
     };
   }, [roomId, userId, roomCode, socketStore, isStoreAvailable]);
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when new messages arrive or when combined messages change
   useEffect(() => {
-    if (socketStore?.messages?.length > 0) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true })
-      }, 100)
+    if (
+      !messagesLoading && 
+      (combinedMessages.length > 0 || (socketStore?.messages && socketStore?.messages.length > 0))
+    ) {
+      // Use requestAnimationFrame to ensure UI has updated before scrolling
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      });
     }
-  }, [socketStore?.messages?.length])
+  }, [combinedMessages.length, socketStore?.messages?.length, messagesLoading]);
+
+  // Combine messages from both roomStore and socketStore
+  useEffect(() => {
+    setMessagesLoading(true); // Start loading
+    
+    const roomMessages = roomStore.currentRoom?.room?.messages || [];
+    const socketMessages = socketStore?.messages || [];
+    
+    // Create a new array with all unique messages
+    const allMessages = [...roomMessages];
+    
+    // Add socket messages if they're not already in the list
+    socketMessages.forEach(socketMsg => {
+      if (!socketMsg) return;
+      
+      const isDuplicate = allMessages.some(existingMsg => 
+        isDuplicateMessage(existingMsg, socketMsg)
+      );
+      
+      if (!isDuplicate) {
+        allMessages.push(socketMsg);
+      }
+    });
+    
+    // Preserve any locally added messages that aren't yet in server responses
+    // This ensures messages we've added locally don't disappear during refreshes
+    if (combinedMessages.length > 0) {
+      combinedMessages.forEach(localMsg => {
+        // Only check messages that were recently added (within last minute)
+        const msgTime = new Date(getMessageTimestamp(localMsg)).getTime();
+        const now = new Date().getTime();
+        const isRecent = now - msgTime < 60000; // Within last minute
+        
+        if (isRecent) {
+          const isDuplicate = allMessages.some(serverMsg => 
+            serverMsg.message === localMsg.message && 
+            Math.abs(new Date(getMessageTimestamp(serverMsg)).getTime() - 
+                    new Date(getMessageTimestamp(localMsg)).getTime()) < 3000
+          );
+          
+          if (!isDuplicate) {
+            allMessages.push(localMsg);
+          }
+        }
+      });
+    }
+    
+    // Sort messages by timestamp
+    allMessages.sort(compareMessageTimestamps);
+    
+    // Delay updating combined messages
+    const timeoutId = setTimeout(() => {
+      setCombinedMessages(allMessages);
+      setMessagesLoading(false); // End loading
+    }, 1000); // Reduced from 5000ms to 1000ms for better user experience
+    
+    // Clean up timeout on unmount or when dependencies change
+    return () => clearTimeout(timeoutId);
+  }, [roomStore.currentRoom?.messages, socketStore?.messages]);
 
   const handleSend = () => {
     if (!message.trim()) return;
     
     try {
       if (socketStore && socketStore.isConnected) {
+        // Create a temporary message object to display immediately
+        const newMessage: Message = {
+          message: message.trim(),
+          sender: userId || '',
+          createdAt: new Date().toISOString(),
+          isAnonymous: true,
+          deviceInfo: socketStore?.deviceInfo?.slugifiedDeviceName || '',
+        };
+        
+        // Add the message to the combined messages array to show it immediately
+        const updatedMessages = [...combinedMessages, newMessage];
+        setCombinedMessages(updatedMessages);
+        
+        // Actually send the message to the server
         sendWebSocketMessage(socketStore, message.trim());
+        
+        // Clear the input
         setMessage("");
-        // Scroll to bottom after sending
-        setTimeout(() => {
-          if (scrollViewRef.current) {
-            scrollViewRef.current.scrollToEnd({ animated: true });
-          }
-        }, 100);
+        
+        // No need for scroll logic here as it's handled by the useEffect above
       }
     } catch (error) {
       console.error("Error sending message:", error);
     }
   };
 
-  const renderMessage = (msg, index) => {
-    const isMe = msg.sender === userId ||
-      (msg.isAnonymous && msg.deviceInfo === socketStore?.deviceInfo?.slugifiedDeviceName)
+  const renderMessage = (msg: Message, index: number) => {
+    const isMe = (msg.sender === userId ||
+      (msg.isAnonymous && msg.deviceInfo === socketStore?.deviceInfo?.slugifiedDeviceName)) ? true : false;
 
     return (
-      <Animated.View
-        key={msg.timeStamp || index}
-        entering={SlideInRight.delay(index * 50).springify()}
-        style={[
-          themed($messageWrapper),
-          isMe ? themed($myMessageWrapper) : themed($otherMessageWrapper)
-        ]}
-      >
-        {!isMe && (
-          <Text style={themed($senderName)}>
-            {msg.isAnonymous ? 'Anonymous' : msg.sender}
-          </Text>
-        )}
-        <View style={[
-          themed($messageBox),
-          isMe ? themed($myMessageBox) : themed($otherMessageBox)
-        ]}>
-          <Text style={[
-            themed($messageText),
-            isMe ? themed($myMessageText) : themed($otherMessageText)
-          ]}>
-            {msg.message}
-          </Text>
-          <Text style={[
-            themed($timestamp),
-            isMe ? themed($myTimestamp) : themed($otherTimestamp)
-          ]}>
-            {new Date(msg.timeStamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-        </View>
-      </Animated.View>
+      <Message
+        key={getMessageTimestamp(msg) || index}
+        message={msg}
+        index={index}
+        isMe={isMe}
+        currentUserId={userId}
+        deviceInfo={socketStore?.deviceInfo}
+      />
     )
   }
 
   // Group messages by date
   const groupedMessages = React.useMemo(() => {
     try {
-      if (!socketStore?.messages || !Array.isArray(socketStore.messages)) {
+      if (!combinedMessages || !Array.isArray(combinedMessages) || combinedMessages.length === 0) {
         return {};
       }
       
-      return socketStore.messages.reduce((groups, message) => {
-        if (!message || !message.timeStamp) return groups;
+      return combinedMessages.reduce((groups: Record<string, Message[]>, message) => {
+        if (!message) return groups;
+        
+        const timestamp = getMessageTimestamp(message);
+        if (!timestamp) return groups;
         
         try {
-          const date = new Date(message.timeStamp).toLocaleDateString();
+          const date = new Date(timestamp).toLocaleDateString();
           if (!groups[date]) {
             groups[date] = [];
           }
@@ -182,7 +283,7 @@ export default observer(function MessageRoomScreen(props: any) {
       console.error("Error grouping messages:", error);
       return {};
     }
-  }, [socketStore?.messages]);
+  }, [combinedMessages]);
 
   if (!isStoreAvailable) {
     return (
@@ -193,7 +294,7 @@ export default observer(function MessageRoomScreen(props: any) {
           onLeftPress={() => navigation.goBack()}
         />
         <View style={themed($loadingContainer)}>
-          <ActivityIndicator size="large" color={themed($loadingIndicator).color} />
+          <ActivityIndicator size="large" color={themed($loadingIndicator).color as string} />
           <Text style={themed($loadingText)}>Initializing chat...</Text>
         </View>
       </Screen>
@@ -229,7 +330,7 @@ export default observer(function MessageRoomScreen(props: any) {
               entering={FadeIn}
               style={themed($loadingContainer)}
             >
-              <ActivityIndicator size="large" color={themed($loadingIndicator).color} />
+              <ActivityIndicator size="large" color={themed($loadingIndicator).color as string} />
               <Text style={themed($loadingText)}>Connecting to chat...</Text>
             </Animated.View>
           ) : socketStore?.error ? (
@@ -237,7 +338,7 @@ export default observer(function MessageRoomScreen(props: any) {
               entering={FadeIn}
               style={themed($errorContainer)}
             >
-              <Icon icon="x" size={50} color={themed($errorIcon).color} />
+              <Icon icon="x" size={50} color={themed($errorIcon).color as string} />
               <Text style={themed($errorText)}>{socketStore.error}</Text>
               <TouchableOpacity
                 style={themed($retryButton)}
@@ -245,6 +346,14 @@ export default observer(function MessageRoomScreen(props: any) {
               >
                 <Text style={themed($retryButtonText)}>Retry Connection</Text>
               </TouchableOpacity>
+            </Animated.View>
+          ) : messagesLoading ? (
+            <Animated.View
+              entering={FadeIn}
+              style={themed($loadingContainer)}
+            >
+              <ActivityIndicator size="large" color={themed($loadingIndicator).color as string} />
+              <Text style={themed($loadingText)}>Loading messages...</Text>
             </Animated.View>
           ) : (
             <ScrollView
@@ -259,21 +368,21 @@ export default observer(function MessageRoomScreen(props: any) {
                   <View style={themed($dateHeaderContainer)}>
                     <View style={themed($dateHeaderLine)} />
                     <View style={themed($dateHeaderTextContainer)}>
-                      <Icon icon="calendar" size={14} color={themed($dateHeaderText).color} />
+                      <Icon icon="components" size={14} color={themed($dateHeaderText).color as string} />
                       <Text style={themed($dateHeaderText)}>{date}</Text>
                     </View>
                     <View style={themed($dateHeaderLine)} />
                   </View>
-                  {messages.map(renderMessage)}
+                  {(messages as any[]).map(renderMessage)}
                 </View>
               ))}
 
-              {(!socketStore?.messages || socketStore.messages.length === 0) && (
+              {(!combinedMessages || combinedMessages.length === 0) && (
                 <Animated.View
                   entering={FadeIn}
                   style={themed($emptyStateContainer)}
                 >
-                  <Icon icon="components" size={50} color={themed($emptyStateIcon).color} />
+                  <Icon icon="components" size={50} color={themed($emptyStateIcon).color as string} />
                   <Text style={themed($emptyStateText)}>No messages yet</Text>
                   <Text style={themed($emptyStateSubtext)}>Start the conversation!</Text>
                 </Animated.View>
@@ -307,9 +416,9 @@ export default observer(function MessageRoomScreen(props: any) {
               onPress={handleSend}
               style={[
                 themed($sendButton),
-                (!message.trim() || !socketStore?.isConnected || socketStore?.error) && themed($disabledSendButton)
+                (!message.trim() || !socketStore?.isConnected || !!socketStore?.error) && themed($disabledSendButton)
               ]}
-              disabled={!message.trim() || !socketStore?.isConnected || socketStore?.error}
+              disabled={!message.trim() || !socketStore?.isConnected || !!socketStore?.error}
             >
               <Icon
                 icon="caretRight"
@@ -400,8 +509,8 @@ const $onlineDot: ThemedStyle<ViewStyle> = () => ({
 const $dateHeaderContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   flexDirection: 'row',
   alignItems: 'center',
-  marginTop: spacing.xs,
-  marginBottom: spacing.xs,
+  marginTop: spacing.sm,
+  marginBottom: spacing.sm,
 })
 
 const $dateHeaderLine: ThemedStyle<ViewStyle> = ({ colors }) => ({
@@ -410,16 +519,21 @@ const $dateHeaderLine: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.border,
 })
 
-const $dateHeaderTextContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+const $dateHeaderTextContainer: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
   flexDirection: 'row',
   alignItems: 'center',
   paddingHorizontal: spacing.sm,
+  paddingVertical: spacing.xs,
+  backgroundColor: colors.palette.neutral200,
+  borderRadius: 12,
+  marginHorizontal: spacing.sm,
 })
 
 const $dateHeaderText: ThemedStyle<TextStyle> = ({ colors, spacing }) => ({
   fontSize: 13,
   color: colors.textDim,
   marginLeft: spacing.xs,
+  fontWeight: '500',
 })
 
 const $messagesOuterContainer: ViewStyle = {
@@ -461,21 +575,29 @@ const $messageBox: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   padding: spacing.sm,
   borderRadius: 16,
   borderBottomLeftRadius: 4,
+  elevation: 1,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.1,
+  shadowRadius: 1,
 })
 
 const $myMessageBox: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.palette.primary500,
   borderBottomLeftRadius: 16,
   borderBottomRightRadius: 4,
+  borderTopRightRadius: 4,
 })
 
 const $otherMessageBox: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.palette.neutral300,
+  borderTopLeftRadius: 4,
 })
 
 const $messageText: ThemedStyle<TextStyle> = ({ spacing }) => ({
   fontSize: 16,
   marginBottom: spacing.xs,
+  lineHeight: 22,
 })
 
 const $myMessageText: ThemedStyle<TextStyle> = ({ colors }) => ({
@@ -490,6 +612,7 @@ const $timestamp: ThemedStyle<TextStyle> = () => ({
   fontSize: 12,
   opacity: 0.7,
   alignSelf: 'flex-end',
+  marginTop: 4,
 })
 
 const $attachIcon: ThemedStyle<ImageStyle> = ({ colors, spacing }) => ({
@@ -534,7 +657,7 @@ const $loadingContainer: ThemedStyle<ViewStyle> = () => ({
   alignItems: 'center',
 })
 
-const $loadingIndicator: ThemedStyle<ViewStyle> = ({ colors }) => ({
+const $loadingIndicator: ThemedStyle<{ color: string }> = ({ colors }) => ({
   color: colors.palette.primary500,
 })
 
@@ -551,7 +674,7 @@ const $errorContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   padding: spacing.lg,
 })
 
-const $errorIcon: ThemedStyle<ImageStyle> = ({ colors }) => ({
+const $errorIcon: ThemedStyle<{ color: string }> = ({ colors }) => ({
   color: colors.error,
 })
 
@@ -582,7 +705,7 @@ const $emptyStateContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   padding: spacing.xl,
 })
 
-const $emptyStateIcon: ThemedStyle<ImageStyle> = ({ colors }) => ({
+const $emptyStateIcon: ThemedStyle<{ color: string }> = ({ colors }) => ({
   color: colors.textDim,
   opacity: 0.5,
 })
@@ -644,4 +767,23 @@ const $disabledSendButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
 const $messageArea: ThemedStyle<ViewStyle> = () => ({
   flex: 1,
   backgroundColor: 'transparent',
+})
+
+const $attachmentContainer: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
+  flexDirection: 'row',
+  alignItems: 'center',
+  padding: spacing.xs,
+  backgroundColor: colors.palette.neutral200,
+  borderRadius: 8,
+  marginBottom: spacing.xs,
+})
+
+const $attachmentIcon: ThemedStyle<ImageStyle> = ({ colors }) => ({
+  marginRight: 8,
+  tintColor: colors.palette.neutral800,
+})
+
+const $attachmentText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.palette.neutral800,
+  fontSize: 14,
 })

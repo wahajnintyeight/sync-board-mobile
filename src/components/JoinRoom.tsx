@@ -80,7 +80,7 @@ export const JoinRoom = observer(function JoinRoom(props: JoinRoomProps) {
       // Call the joinRoomByCode method from the roomStore
       const result = await rootStore.roomStore.joinRoomByCode(roomCode, deviceInfo.slugifiedDeviceName)
       
-      console.log("Joined room:", result)
+      // console.log("Joined room:", result)
       
       // Close the modal
       if (onClose) onClose()
