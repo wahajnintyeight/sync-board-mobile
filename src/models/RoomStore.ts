@@ -1,6 +1,7 @@
 import { Instance, SnapshotOut, types } from "mobx-state-tree"
 import { withSetPropAction } from "./helpers/withSetPropAction"
-import { createRoom, joinRoom, updateRoomName, deleteRoom, getRoomInfo, sendRoomMessage } from "../services/api/implementations/roomApi"
+import { SessionStore, SessionStoreModel } from "./SessionStore"
+import { createRoom, joinRoom, updateRoomName, deleteRoom, getRoomInfo, sendRoomMessage, getRoomMessages } from "../services/api/implementations/roomApi"
 
 export const RoomStoreModel = types
   .model("RoomStore")
@@ -8,7 +9,10 @@ export const RoomStoreModel = types
     currentRoom: types.maybe(types.frozen()),
     roomMessages: types.array(types.frozen()),
     loading: false,
-    error: types.maybe(types.string)
+    error: types.maybe(types.string),
+    currentPage: 1,
+    hasMore: true,
+    totalMessages: 0
   })
   .actions(withSetPropAction)
   .actions((store) => ({
@@ -33,17 +37,18 @@ export const RoomStoreModel = types
         store.setProp("loading", false)
       }
     },
-    async joinRoomByCode(code: string, deviceInfo: string) {
+    async joinRoomByCode(code: string, deviceInfo: string, sessionStore: SessionStore) {
       store.setProp("loading", true)
       try {
         const response = await joinRoom(code, deviceInfo)
         store.setProp("currentRoom", {room: response.result})
+        sessionStore.setDeviceInfo(deviceInfo)
         store.setProp("error", undefined)
         return response.result
       } catch (error: unknown) {
         console.error("RoomStore.joinRoomByCode error:", error)
         const errorMessage = error instanceof Error ? error.message : String(error)
-        store.setProp("error", error.message)
+        store.setProp("error", errorMessage)
         throw error
       } finally {
         store.setProp("loading", false)
@@ -55,8 +60,9 @@ export const RoomStoreModel = types
         const response = await updateRoomName(code, roomName)
         store.setProp("error", undefined)
         return response
-      } catch (error) {
-        store.setProp("error", error.message)
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        store.setProp("error", errorMessage)
         throw error
       } finally {
         store.setProp("loading", false)
@@ -69,8 +75,9 @@ export const RoomStoreModel = types
         store.setProp("currentRoom", undefined)
         store.setProp("error", undefined)
         return response
-      } catch (error) {
-        store.setProp("error", error.message)
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        store.setProp("error", errorMessage)
         throw error
       } finally {
         store.setProp("loading", false)
@@ -83,11 +90,40 @@ export const RoomStoreModel = types
         store.setProp("currentRoom", response.room)
         store.setProp("error", undefined)
         return response
-      } catch (error) {
-        store.setProp("error", error.message)
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        store.setProp("error", errorMessage)
         throw error
       } finally {
         store.setProp("loading", false)
+      }
+    },
+    async getRoomMessages(roomCode: string, page: number = 1, limit: number = 10) {
+      console.log("GET ROOM MESSAGES CALLED")
+      store.setProp("loading", true)
+      try {
+        const response = await getRoomMessages(roomCode, page, limit)
+        if (page === 1) {
+          store.setProp("roomMessages", response.messages || [])
+        } else {
+          store.setProp("roomMessages", [...store.roomMessages, ...(response.messages || [])])
+        }
+        store.setProp("currentPage", page)
+        store.setProp("hasMore", response.hasMore)
+        store.setProp("totalMessages", response.totalMessages)
+        store.setProp("error", undefined)
+        return response
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        store.setProp("error", errorMessage)
+        throw error
+      } finally {
+        store.setProp("loading", false)
+      }
+    },
+    loadMoreMessages(roomCode: string) {
+      if (store.hasMore && !store.loading) {
+        return store.getRoomMessages(roomCode, store.currentPage + 1)
       }
     },
     async sendMessage(roomCode: string, message: string, sender: string) {
@@ -96,8 +132,9 @@ export const RoomStoreModel = types
         const response = await sendRoomMessage(roomCode, message, sender)
         store.setProp("error", undefined)
         return response
-      } catch (error) {
-        store.setProp("error", error.message)
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        store.setProp("error", errorMessage)
         throw error
       } finally {
         store.setProp("loading", false)
@@ -117,6 +154,9 @@ export const RoomStoreModel = types
     },
     get roomId() {
       return store.currentRoom?._id
+    },
+    get messages() {
+      return store.roomMessages
     }
   }))
 

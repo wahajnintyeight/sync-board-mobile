@@ -61,7 +61,7 @@ export const createRoom = async (): Promise<{ message: string; error?: string; r
  * @param deviceInfo The device information.
  * @returns The response from the API.
  */
-export const joinRoom = async (code: string, deviceInfo: string): Promise<{ message: string; error?: string; room?: any }> => {
+export const joinRoom = async (code: string, deviceInfo: string): Promise<{ message: string; error?: string; result?: any }> => {
     const response: ApiResponse<any> = await api.apisauce.post(
         `/room/join`,
         { code, deviceInfo }
@@ -76,11 +76,13 @@ export const joinRoom = async (code: string, deviceInfo: string): Promise<{ mess
     // Store roomId and code in local storage
     if (response.data?.result?._id) {
         storage.set("roomId", response.data.result._id);
+        
     }
     
     if (response.data?.result?.code) {
         storage.set("roomCode", response.data.result.code);
     }
+
 
     return {
         message: response.data?.message || "",
@@ -193,3 +195,35 @@ export const sendRoomMessage = async (roomCode: string, message: string, sender:
         error: response.data?.error || ""
     };
 }; 
+
+export const getRoomMessages = async (
+  roomCode: string,
+  page: number = 1,
+  limit: number = 10
+): Promise<{ 
+  message: string; 
+  error?: string; 
+  messages?: any[];
+  page: number;
+  totalMessages: number;
+  hasMore: boolean;
+}> => {
+  const response: ApiResponse<any> = await api.apisauce.get(
+    `/room/messages?roomCode=${roomCode}&page=${page}`
+  );
+
+  console.log("getRoomMessages API response", response);
+  if (!response.ok) {
+    const problem = getGeneralApiProblem(response);
+    throw new Error(problem?.kind || "unknown");
+  }
+
+  return {
+    message: response.data?.message || "",
+    error: response.data?.error || "",
+    messages: response.data?.result?.messages || [],
+    page: response.data?.result?.page || 1,
+    totalMessages: response.data?.result?.totalMessages || 0,
+    hasMore: response.data?.hasMore || false
+  };
+}

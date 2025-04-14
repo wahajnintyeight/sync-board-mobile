@@ -69,28 +69,34 @@ export const JoinRoom = observer(function JoinRoom(props: JoinRoomProps) {
       setError("Please enter a valid 6-character room code")
       return
     }
-
     try {
       setIsJoining(true)
       setError("")
       
       // Get device info for joining
-      const deviceInfo = await getDeviceInfo()
-      
-      // Call the joinRoomByCode method from the roomStore
-      const result = await rootStore.roomStore.joinRoomByCode(roomCode, deviceInfo.slugifiedDeviceName)
-      
-      // console.log("Joined room:", result)
-      
-      // Close the modal
-      if (onClose) onClose()
-      
-      // Navigate to message screen with the room data
-      navigation.navigate("MessageRoom", {
-        roomId: result.room?._id,
-        roomCode: result.room?.code,
-        roomName: result.room?.roomName || "Joined Room"
+      getDeviceInfo().then(deviceInfo => {
+        // Call the joinRoomByCode method from the roomStore once deviceInfo is fetched
+        console.log("[JoinRoom] DEVICE FETCHED FROM THE FUNCTION", deviceInfo)
+        return rootStore.roomStore.joinRoomByCode(
+          roomCode, 
+          deviceInfo?.slugifiedDeviceName || deviceInfo,
+          rootStore.sessionStore
+        );
+      }).then(result => {
+        // Store the result to use for navigation
+        // Close the modal
+        if (onClose) onClose()
+        // Navigate to the message room
+        navigation.navigate("MessageRoom")
+        return result;
+      }).catch(error => {
+        console.error("Error joining room:", error);
+        setError(error instanceof Error ? error.message : "Failed to join room");
+        throw error; // Re-throw to be caught by the outer try/catch
+      }).finally(() => {
+        setIsJoining(false)
       })
+
     } catch (error) {
       console.error("Error joining room:", error)
       setError(error instanceof Error ? error.message : "Failed to join room")
@@ -134,7 +140,11 @@ export const JoinRoom = observer(function JoinRoom(props: JoinRoomProps) {
       const deviceInfo = await getDeviceInfo()
       
       // Call the joinRoomByCode method from the roomStore
-      const result = await rootStore.roomStore.joinRoomByCode(code, deviceInfo.slugifiedDeviceName)
+      const result = await rootStore.roomStore.joinRoomByCode(
+        code, 
+        deviceInfo.slugifiedDeviceName,
+        rootStore.sessionStore
+      )
       
       console.log("Joined room via QR:", result)
       

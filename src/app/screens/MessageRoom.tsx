@@ -10,6 +10,7 @@ import { useStores } from "@/models"
 import { initializeWebSocket, disconnectWebSocket, sendWebSocketMessage } from "@/services/websocket/server"
 import Animated, { FadeIn, FadeOut, SlideInRight } from "react-native-reanimated"
 import { RootStoreProvider } from "@/models/helpers/useStores"
+import { storage } from "@/utils/storage"
 
 interface Message {
   timeStamp?: string;
@@ -23,17 +24,52 @@ interface Message {
   attachmentURL?: string;
 }
 
-export default observer(function MessageRoomScreen(props: any) {
+export default observer(function MessageRoomScreen() {
   const [message, setMessage] = useState("")
   const [isConnecting, setIsConnecting] = useState(true)
+  const [roomMessagesState, setRoomMessagesState] = useState([])
   const { themed } = useAppTheme()
   const rootStore = useStores()
-  const { roomStore, socketStore } = rootStore
+  const { roomStore, socketStore, sessionStore } = rootStore
   const navigation = useNavigation()
   const scrollViewRef = useRef<ScrollView>(null)
   
   // Add state to track if messages are still loading
   const [messagesLoading, setMessagesLoading] = useState(true)
+  
+  // Get current device info from either storage or the sessionStore
+  const [currentDeviceInfo, setCurrentDeviceInfo] = useState<string | null>(null)
+  
+  // Load device info on component mount
+  useEffect(() => {
+    const loadDeviceInfo = async () => {
+      // Try to get device info from sessionStore first
+      if (sessionStore?.deviceInfo) {
+        setCurrentDeviceInfo(sessionStore.deviceInfo)
+        return
+      }
+      
+      // Fall back to storage
+      const storedDeviceInfo = storage.getString('deviceInfo')
+      if (storedDeviceInfo) {
+        try {
+          console.log("[MessageRoom] Device Info:", storedDeviceInfo)
+          const parsedInfo = JSON.parse(storedDeviceInfo)
+          setCurrentDeviceInfo(parsedInfo.slugifiedDeviceName)
+          return
+        } catch (error) {
+          console.error('Error parsing stored device info:', error)
+        }
+      }
+      
+      // Last resort: try socketStore
+      if (socketStore?.deviceInfo?.slugifiedDeviceName) {
+        setCurrentDeviceInfo(socketStore.deviceInfo.slugifiedDeviceName)
+      }
+    }
+    
+    loadDeviceInfo()
+  }, [sessionStore?.deviceInfo, socketStore?.deviceInfo])
 
   // Helper functions to safely handle different message timestamp formats
   const getMessageTimestamp = (msg: any): string => {
@@ -59,18 +95,15 @@ export default observer(function MessageRoomScreen(props: any) {
   }
 
   // Get room data from store
-  const room = roomStore.currentRoom.room || {}
-  const roomId = roomStore.currentRoom.room._id
+  const room = roomStore.currentRoom?.room || {}
+  const roomId = roomStore.currentRoom?.room?._id || null
   const roomName = room.roomName || "New Chat Room"
-  const roomCode = room.code || props.route?.params?.roomCode
-  const userId = roomStore?.userId || null
+  const roomCode = room.code || roomStore.currentRoom?.roomCode
+  const userId = currentDeviceInfo
 
   // State to hold combined messages from both roomStore and socketStore
   const [combinedMessages, setCombinedMessages] = useState<Message[]>([])
 
-  console.log("Message length", roomStore?.currentRoom)
-  // console.log('[MessageRoom] roomId', room);
-  // Check if store is available
   const isStoreAvailable = React.useMemo(() => {
     try {
       // Access a property to check if the store is detached
@@ -148,12 +181,42 @@ export default observer(function MessageRoomScreen(props: any) {
       });
     }
   }, [combinedMessages.length, socketStore?.messages?.length, messagesLoading]);
-
   // Combine messages from both roomStore and socketStore
   useEffect(() => {
-    setMessagesLoading(true); // Start loading
+    // Only fetch messages once when component mounts and roomCode is available
+    const fetchMessages = async () => {
+      if (roomCode) {
+        // Only fetch if we don't have messages or need to refresh
+          setMessagesLoading(true); // Start loading
+          try {
+            const res = await roomStore.getRoomMessages(roomCode, 1, 10);
+            console.log("RES:",res)
+            if (res.messages && res.messages.length > 0) {
+              setRoomMessagesState(res.messages);
+              console.log(`[MessageRoom] Fetched ${res.messages.length} messages successfully`);
+            } else {
+              setRoomMessagesState([]);
+              console.log("[MessageRoom] No messages found for room");
+            }
+          } catch (error) {
+            console.error("[MessageRoom] Error fetching messages:", error);
+            // Set empty array on error to avoid undefined issues
+            setRoomMessagesState([]);
+          } finally {
+            setMessagesLoading(false); // End loading regardless of success/failure
+          }
+      } else {
+        console.log("[MessageRoom] No room code available, skipping message fetch");
+        setMessagesLoading(false);
+      }
+    };
     
-    const roomMessages = roomStore.currentRoom?.room?.messages || [];
+    fetchMessages();
+  }, [roomCode]); // Only depends on roomCode to prevent unnecessary fetches
+  
+  // Process and combine messages whenever either source changes
+  useEffect(() => {
+    const roomMessages = roomMessagesState || [];
     const socketMessages = socketStore?.messages || [];
     
     // Create a new array with all unique messages
@@ -198,15 +261,10 @@ export default observer(function MessageRoomScreen(props: any) {
     // Sort messages by timestamp
     allMessages.sort(compareMessageTimestamps);
     
-    // Delay updating combined messages
-    const timeoutId = setTimeout(() => {
-      setCombinedMessages(allMessages);
-      setMessagesLoading(false); // End loading
-    }, 1000); // Reduced from 5000ms to 1000ms for better user experience
+    // Update combined messages
+    setCombinedMessages(allMessages);
     
-    // Clean up timeout on unmount or when dependencies change
-    return () => clearTimeout(timeoutId);
-  }, [roomStore.currentRoom?.messages, socketStore?.messages]);
+  }, [roomStore.roomMessages, socketStore?.messages]);
 
   const handleSend = () => {
     if (!message.trim()) return;
@@ -219,7 +277,7 @@ export default observer(function MessageRoomScreen(props: any) {
           sender: userId || '',
           createdAt: new Date().toISOString(),
           isAnonymous: true,
-          deviceInfo: socketStore?.deviceInfo?.slugifiedDeviceName || '',
+          deviceInfo: currentDeviceInfo || socketStore?.deviceInfo?.slugifiedDeviceName || '',
         };
         
         // Add the message to the combined messages array to show it immediately
@@ -240,9 +298,11 @@ export default observer(function MessageRoomScreen(props: any) {
   };
 
   const renderMessage = (msg: Message, index: number) => {
-    const isMe = (msg.sender === userId ||
-      (msg.isAnonymous && msg.deviceInfo === socketStore?.deviceInfo?.slugifiedDeviceName)) ? true : false;
-
+    // Check if message is from current user by comparing deviceInfo with our deviceInfo
+    const isMe = msg.deviceInfo === currentDeviceInfo || 
+                 msg.deviceInfo === socketStore?.deviceInfo?.slugifiedDeviceName ||
+                 msg.deviceInfo === sessionStore?.deviceInfo;
+      
     return (
       <Message
         key={getMessageTimestamp(msg) || index}
@@ -284,6 +344,17 @@ export default observer(function MessageRoomScreen(props: any) {
       return {};
     }
   }, [combinedMessages]);
+
+  // Handle scroll to load more messages
+  const handleScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent
+    const paddingToBottom = 20
+    const isCloseToTop = contentOffset.y <= paddingToBottom
+
+    if (isCloseToTop && roomStore.hasMore && !roomStore.loading) {
+      roomStore.loadMoreMessages(roomStore.roomCode)
+    }
+  }
 
   if (!isStoreAvailable) {
     return (
@@ -362,22 +433,19 @@ export default observer(function MessageRoomScreen(props: any) {
               contentContainerStyle={themed($scrollViewContent)}
               showsVerticalScrollIndicator={false}
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+              onScroll={handleScroll}
+              scrollEventThrottle={400}
             >
-              {Object.entries(groupedMessages).map(([date, messages]) => (
-                <View key={date}>
-                  <View style={themed($dateHeaderContainer)}>
-                    <View style={themed($dateHeaderLine)} />
-                    <View style={themed($dateHeaderTextContainer)}>
-                      <Icon icon="components" size={14} color={themed($dateHeaderText).color as string} />
-                      <Text style={themed($dateHeaderText)}>{date}</Text>
-                    </View>
-                    <View style={themed($dateHeaderLine)} />
-                  </View>
-                  {(messages as any[]).map(renderMessage)}
-                </View>
-              ))}
+              {roomStore.messages.map((msg, index) => renderMessage(msg, index))}
 
-              {(!combinedMessages || combinedMessages.length === 0) && (
+              {roomStore.loading && (
+                <View style={themed($loadingMoreContainer)}>
+                  <ActivityIndicator size="small" color={themed($loadingIndicator).color as string} />
+                  <Text style={themed($loadingMoreText)}>Loading more messages...</Text>
+                </View>
+              )}
+
+              {(!roomStore.messages || roomStore.messages.length === 0) && (
                 <Animated.View
                   entering={FadeIn}
                   style={themed($emptyStateContainer)}
@@ -786,4 +854,17 @@ const $attachmentIcon: ThemedStyle<ImageStyle> = ({ colors }) => ({
 const $attachmentText: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.palette.neutral800,
   fontSize: 14,
+})
+
+const $loadingMoreContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: spacing.sm,
+})
+
+const $loadingMoreText: ThemedStyle<TextStyle> = ({ colors, spacing }) => ({
+  marginLeft: spacing.sm,
+  fontSize: 14,
+  color: colors.textDim,
 })

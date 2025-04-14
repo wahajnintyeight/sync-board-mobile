@@ -9,6 +9,7 @@ export const SessionStoreModel = types
     roomId: types.maybe(types.string),
     message: types.maybe(types.string),
     error: types.maybe(types.string),
+    deviceInfo: types.maybe(types.string),
   })
   .actions((store) => ({
     setSessionId(id: string) {
@@ -22,6 +23,9 @@ export const SessionStoreModel = types
     },
     setError(err: string) {
       store.error = err;
+    },
+    setDeviceInfo(deviceInfo: string) {
+      store.deviceInfo = deviceInfo;
     },
     async createSession(sessionData: { [key: string]: any }) {
       try {
@@ -41,6 +45,9 @@ export const SessionStoreModel = types
     },
     getSessionId() {
       return store.sessionId;
+    },
+    getDeviceInfo() {
+      return store.deviceInfo;
     }
   }));
 

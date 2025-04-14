@@ -1,6 +1,6 @@
 import React, { FC, useEffect, useState } from "react"
 import { observer } from "mobx-react-lite"
-import { Image, ImageStyle, TextStyle, View, ViewStyle } from "react-native"
+import { Image, ImageStyle, TextStyle, View, ViewStyle, TouchableOpacity, Linking, Animated } from "react-native"
 import { Button, Screen, Text } from "@/components"
 import { JoinRoom } from "@/components/JoinRoom"
 import { ThemedStyle } from "@/theme"
@@ -9,11 +9,12 @@ import { useAppTheme } from "@/utils/useAppTheme"
 import { RootStoreProvider, useStores } from "@/models/helpers/useStores"
 import { storage } from "@/utils/storage"
 import { getDeviceInfo } from "@/utils/deviceInfo"
-const welcomeLogo = require("../../assets/images/logo.png")
-const welcomeFace = require("../../assets/images/welcome-face.png")
 import { useNavigation } from "@react-navigation/native"
 import { isRTL } from "@/i18n"
+import { Ionicons } from "@expo/vector-icons"
 
+const welcomeLogo = require("../../assets/images/logo.png")
+const welcomeFace = require("../../assets/images/welcome-face.png")
 
 export default observer(function SplashScreen() {
 
@@ -22,6 +23,9 @@ export default observer(function SplashScreen() {
   const navigation = useNavigation();
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [joinRoomVisible, setJoinRoomVisible] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showAlert, setShowAlert] = useState(false);
+  const fadeAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
     const loadSession = async () => {
@@ -30,17 +34,14 @@ export default observer(function SplashScreen() {
       const sessionExpiry = await storage.getNumber("sessionExpiry")
       console.log("sessionId", sessionId, 'exp', sessionExpiry, Date.now())
       if (sessionId === undefined || sessionExpiry < Date.now()) {
-        // Call createSession if sessionId exists
         await rootStore.sessionStore.createSession({ sessionId })
       }
 
-      // Set a timeout to remove the sessionId after 3600 seconds
       const timeoutId = setTimeout(() => {
         storage.delete("sessionId")
         rootStore.sessionStore.sessionId = "" // Clear the sessionId in the store
       }, 3600 * 1000) // 3600 seconds in milliseconds
 
-      // Cleanup function to clear the timeout if the component unmounts
       return () => clearTimeout(timeoutId)
     }
 
@@ -53,7 +54,6 @@ export default observer(function SplashScreen() {
     try {
       setIsCreatingRoom(true);
       
-      // Call the createRoom method from the roomStore
       const result = await rootStore.roomStore.createNewRoom();
       
       console.log("Room created with ID:", result.roomId);
@@ -80,9 +80,62 @@ export default observer(function SplashScreen() {
     setJoinRoomVisible(false);
   }
 
+  const handleClearStorage = async () => {
+    try {
+      storage.clearAll();
+      setShowAlert(true);
+      // Animate in
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      
+      // Animate out after 2 seconds
+      setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setShowAlert(false));
+      }, 2000);
+      
+      // Force component remount by changing the key
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error("Error clearing storage:", error);
+    }
+  };
+
   return (
-    <RootStoreProvider value={rootStore}>
+    <RootStoreProvider value={rootStore} key={refreshKey}>
       <Screen safeAreaEdges={["top"]} contentContainerStyle={themed($container)}>
+        {showAlert && (
+          <Animated.View 
+            style={[
+              themed($alertContainer),
+              {
+                opacity: fadeAnim,
+                transform: [{
+                  translateY: fadeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0]
+                  })
+                }]
+              }
+            ]}
+          >
+            <Text style={themed($alertText)}>Storage cleared successfully</Text>
+          </Animated.View>
+        )}
+        
+        <TouchableOpacity 
+          style={themed($settingsButton)} 
+          onPress={handleClearStorage}
+        >
+          <Ionicons name="refresh" size={24} style={themed($settingsIcon)} />
+        </TouchableOpacity>
+        
         <View style={themed($topContainer)}>
           <Text
             testID="sync-board-heading"
@@ -194,3 +247,41 @@ const $joinRoomButtonText: ThemedStyle<TextStyle> = ({ colors }) => ({
 const $root: ViewStyle = {
   flex: 1,
 }
+
+const $settingsButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  position: 'absolute',
+  top: 20,
+  right: 20,
+  zIndex: 1,
+  padding: 8,
+  borderRadius: 20,
+  backgroundColor: colors.palette.neutral200,
+})
+
+const $settingsIcon: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+})
+
+const $alertContainer: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  position: 'absolute',
+  top: 20,
+  left: 20,
+  right: 20,
+  backgroundColor: colors.palette.primary500,
+  padding: 16,
+  borderRadius: 8,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 3.84,
+  elevation: 5,
+})
+
+const $alertText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.palette.neutral100,
+  fontSize: 16,
+  fontWeight: '500',
+})
